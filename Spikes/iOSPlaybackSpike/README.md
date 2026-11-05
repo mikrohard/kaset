@@ -9,7 +9,8 @@ answer doesn't depend on any refactor.
 
 ## Build and run
 
-Open `KasetPlaybackSpike.xcodeproj`, select your iPhone, and run. Signing uses
+Generate the project with `xcodegen generate` (the `.xcodeproj` is gitignored),
+open `KasetPlaybackSpike.xcodeproj`, select your iPhone, and run. Signing uses
 automatic provisioning with team `4PZ2UBJ583`; change `DEVELOPMENT_TEAM` for
 another account. iOS 26+, iPhone only.
 
@@ -74,6 +75,11 @@ an iPhone.
   WebKit does **not** pause on backgrounding; the background-resume mitigation
   never fired in those runs except at track ends. The backgrounding pause seen
   in the simulator applies to video streams (guest playback).
+- **Lock-screen previous/next work** once YouTube Music's `seekforward`/`seekbackward`
+  Media Session handlers are blocked (the "Lock-screen previous/next" toggle, a port
+  of Kaset's macOS override in `SingletonPlayerWebView+PlaybackPreferences.swift`).
+  With those handlers registered, iOS shows skip buttons instead. Next/previous
+  reach native through the page's Media Session, as on macOS.
 - Starting playback logs `interruption BEGAN (reason=0)` with no matching
   `ENDED`: WebKit's media session takes over the app's audio session. It's
   harmless here, but a real app shouldn't treat that interruption as a pause.
@@ -97,6 +103,8 @@ Note the time you start each test; the log lines carry timestamps.
 | 10 | AirPlay to a speaker/Apple TV, then lock | Audio keeps playing on the target |
 | 11 | Open a few heavy apps (camera, games) while playing in the background | If `💥 WEB CONTENT PROCESS TERMINATED` appears, playback recovers at the same position |
 | 12 | Leave it playing for 1 h, locked | No stop; check battery use in Settings |
+| 13 | "Lock-screen previous/next (block skip)" **on** (default): play, lock, check the lock screen and Control Center | Previous/next buttons instead of skip; pressing them logs `🎛 web media session action: nexttrack` then `cmd next`, and the track changes. Log shows `seekforward (blocked: track-buttons mode)` |
+| 14 | Same with the toggle **off** | Skip buttons return (confirms YouTube Music's `seekforward`/`seekbackward` handlers cause them) |
 
 ## Getting the log off the device
 

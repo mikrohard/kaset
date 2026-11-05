@@ -41,6 +41,17 @@ final class WebPlaybackEngine: NSObject {
     /// Mitigation under test: WebKit pauses <video> when the app backgrounds even with
     /// the audio background mode; call play() again right after that pause.
     var resumeAfterBackgroundPause = true
+    /// The open question: block YouTube Music's seekforward/seekbackward Media
+    /// Session handlers (as Kaset does on macOS) so the lock screen shows
+    /// previous/next instead of skip buttons, with next/previous handled natively.
+    var trackButtons = true {
+        didSet {
+            guard oldValue != self.trackButtons else { return }
+            log("lock-screen track buttons \(self.trackButtons ? "ON" : "OFF")")
+            self.installUserScripts()
+            self.evaluate("window.__spikeSetTrackButtons && window.__spikeSetTrackButtons(\(self.trackButtons))")
+        }
+    }
 
     let webView: WKWebView
 
@@ -58,17 +69,13 @@ final class WebPlaybackEngine: NSObject {
         // iOS-only: without these the iPhone hands <video> to the fullscreen player.
         configuration.allowsInlineMediaPlayback = true
         configuration.allowsPictureInPictureMediaPlayback = true
-        configuration.userContentController.addUserScript(WKUserScript(
-            source: ObserverScript.source,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: true
-        ))
 
         self.webView = WKWebView(frame: CGRect(x: 0, y: 0, width: 2, height: 2), configuration: configuration)
         self.webView.customUserAgent = Self.userAgent
         self.webView.isInspectable = true
         super.init()
 
+        self.installUserScripts()
         self.webView.configuration.userContentController.add(self, name: "spike")
         self.webView.navigationDelegate = self
         self.consentCookieTask = Task { await Self.installConsentCookie() }
@@ -185,6 +192,15 @@ final class WebPlaybackEngine: NSObject {
         }
     }
 
+    /// The bootstrap script carries the current mode, so it's reinstalled on change.
+    private func installUserScripts() {
+        let controller = self.webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        for source in [ObserverScript.bootstrap(trackButtons: self.trackButtons), ObserverScript.source] {
+            controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+    }
+
     // MARK: - Heartbeat
 
     /// Native 10 s tick. Gaps mean the app process was suspended; a growing
@@ -236,8 +252,18 @@ final class WebPlaybackEngine: NSObject {
         switch action {
         case "pause", "stop":
             self.wantsPlayback = false
-        case "play", "nexttrack", "previoustrack":
+        case "play":
             self.wantsPlayback = true
+        case "nexttrack", "previoustrack":
+            self.wantsPlayback = true
+            // In track-buttons mode the page doesn't act on these; native owns them, as in Kaset.
+            if self.trackButtons {
+                if action == "nexttrack" {
+                    self.next(reason: "lock-screen next")
+                } else {
+                    self.previous(reason: "lock-screen previous")
+                }
+            }
         default:
             break
         }

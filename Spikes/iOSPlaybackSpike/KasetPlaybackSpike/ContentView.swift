@@ -80,6 +80,7 @@ struct ContentView: View {
                     Toggle("App-owned Now Playing", isOn: self.$nowPlaying.isEnabled)
                     Toggle("Auto-advance queue", isOn: self.$engine.autoAdvance)
                     Toggle("Resume after background pause", isOn: self.$engine.resumeAfterBackgroundPause)
+                    Toggle("Lock-screen previous/next (block skip)", isOn: self.$engine.trackButtons)
                     Toggle("Show web view", isOn: self.$showsWebView)
                     Button("Sign in…") { self.showsLogin = true }
                 }
