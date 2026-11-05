@@ -67,6 +67,10 @@ final class MockYTMusicClient: YTMusicClientProtocol { // swiftlint:disable:this
     var searchContinuationResponses: [String: SearchResponse] = [:]
     var searchSuggestions: [SearchSuggestion] = []
     var libraryPlaylists: [Playlist] = []
+    var uploadedAlbums: [Album] = []
+    var uploadedArtists: [Artist] = []
+    private(set) var getUploadedAlbumsCallCount = 0
+    private(set) var getUploadedArtistsCallCount = 0
     var libraryAlbums: [Album] = []
     var libraryArtists: [Artist] = []
     var libraryPodcastShows: [PodcastShow] = []
@@ -769,6 +773,22 @@ final class MockYTMusicClient: YTMusicClientProtocol { // swiftlint:disable:this
             throw error
         }
         return self.libraryPlaylists
+    }
+
+    func getUploadedAlbums() async throws -> [Album] {
+        self.getUploadedAlbumsCallCount += 1
+        if let error = shouldThrowError {
+            throw error
+        }
+        return self.uploadedAlbums
+    }
+
+    func getUploadedArtists() async throws -> [Artist] {
+        self.getUploadedArtistsCallCount += 1
+        if let error = shouldThrowError {
+            throw error
+        }
+        return self.uploadedArtists
     }
 
     func getLibraryContent() async throws -> PlaylistParser.LibraryContent {

@@ -905,6 +905,63 @@ final class YTMusicClient: YTMusicClientProtocol {
         }
     }
 
+    /// Fetches all of the user's uploaded albums, following every continuation page.
+    func getUploadedAlbums() async throws -> [Album] {
+        try await self.fetchAllUploadsPages(
+            browseId: "FEmusic_library_privately_owned_releases",
+            firstPage: { data in
+                let page = PlaylistParser.parseLibraryAlbumsPage(data)
+                return (page.albums, page.nextPage)
+            },
+            continuationPage: { data in
+                let page = PlaylistParser.parseLibraryAlbumsContinuation(data)
+                return (page.albums, page.nextPage)
+            }
+        )
+    }
+
+    /// Fetches all artists of the user's uploaded songs, following every continuation page.
+    func getUploadedArtists() async throws -> [Artist] {
+        try await self.fetchAllUploadsPages(
+            browseId: "FEmusic_library_privately_owned_artists",
+            firstPage: LibraryContentParser.parseUploadedArtistsPage,
+            continuationPage: LibraryContentParser.parseUploadedArtistsContinuation
+        )
+    }
+
+    /// Loads an uploads list and its continuation pages. A failed continuation keeps the items loaded so far.
+    private func fetchAllUploadsPages<Item: Identifiable>(
+        browseId: String,
+        firstPage: ([String: Any]) -> ([Item], String?),
+        continuationPage: ([String: Any]) -> ([Item], String?)
+    ) async throws -> [Item] where Item.ID == String {
+        let data = try await self.request("browse", body: ["browseId": browseId], ttl: APICache.TTL.library)
+        var (items, nextPage) = firstPage(data)
+        var seenIDs = Set(items.map(\.id))
+        var requestedPages = Set<String>()
+
+        while let token = nextPage, requestedPages.insert(token).inserted {
+            do {
+                let continuationData = try await self.requestContinuation(
+                    token,
+                    ttl: APICache.TTL.library,
+                    authPolicy: .required
+                )
+                let page = continuationPage(continuationData)
+                items += page.0.filter { seenIDs.insert($0.id).inserted }
+                nextPage = page.1
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                self.logger.warning("\(browseId) continuation failed, keeping \(items.count) items: \(error.localizedDescription)")
+                break
+            }
+        }
+
+        self.logger.info("Fetched \(items.count) items from \(browseId)")
+        return items
+    }
+
     // MARK: - Liked Songs with Pagination
 
     /// Continuation token for liked songs pagination.
@@ -988,11 +1045,11 @@ final class YTMusicClient: YTMusicClientProtocol {
 
     /// Maps a playlist, album, or radio ID to the browse ID that loads it.
     ///
-    /// - VL..., RD..., MPRE..., UC... and uploaded songs load as-is.
+    /// - VL..., RD..., MPRE..., UC... and uploads (songs, albums, artists) load as-is.
     /// - PL... playlists and OLAK... album playlists need the VL prefix: a bare OLAK browse
     ///   returns HTTP 400, while VLOLAK... lists the album's tracks without an album header.
     nonisolated static func playlistBrowseId(for id: String) -> String {
-        let loadsAsIs = id == Playlist.uploadedSongsBrowseID
+        let loadsAsIs = id.hasPrefix(Playlist.uploadsBrowseIDPrefix)
             || id.hasPrefix("VL")
             || id.hasPrefix("RD")
             || id.hasPrefix("MPRE")
@@ -1807,7 +1864,7 @@ final class YTMusicClient: YTMusicClientProtocol {
             if Self.authRequiredBrowseIds.contains(browseId)
                 || browseId == LikedMusicPlaylist.browseID
                 || browseId.hasPrefix("MPLAUC")
-                || browseId == Playlist.uploadedSongsBrowseID
+                || browseId.hasPrefix(Playlist.uploadsBrowseIDPrefix)
             {
                 return .required
             }
@@ -1893,6 +1950,7 @@ final class YTMusicClient: YTMusicClientProtocol {
         "FEmusic_library_privately_owned_landing",
         "FEmusic_library_privately_owned_tracks",
         "FEmusic_library_privately_owned_albums",
+        "FEmusic_library_privately_owned_releases",
         "FEmusic_library_privately_owned_artists",
     ]
 

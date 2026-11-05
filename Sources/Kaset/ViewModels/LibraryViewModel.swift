@@ -240,6 +240,15 @@ final class LibraryViewModel {
     /// Virtual playlist entry for user-uploaded songs, when available.
     private(set) var uploadedSongsPlaylist: Playlist?
 
+    /// Albums of the user's uploaded songs, loaded when the Uploads filter is first opened.
+    private(set) var uploadedAlbums: [Album] = []
+
+    /// Artists of the user's uploaded songs, loaded when the Uploads filter is first opened.
+    private(set) var uploadedArtists: [Artist] = []
+
+    /// Loading state of the uploaded albums and artists.
+    private(set) var uploadsLoadingState: LoadingState = .idle
+
     /// Set of playlist IDs that are in the user's library (for quick lookup).
     private(set) var libraryPlaylistIds: Set<String> = []
 
@@ -339,6 +348,9 @@ final class LibraryViewModel {
             self.accountScopeGeneration &+= 1
             self.librarySnapshot = .empty
             self.contentReconciler = LibraryContentReconciler()
+            self.uploadedAlbums = []
+            self.uploadedArtists = []
+            self.uploadsLoadingState = .idle
         }
         self.libraryAccountScope = accountScope
     }
@@ -602,9 +614,51 @@ final class LibraryViewModel {
         }
     }
 
+    /// Loads uploaded albums and artists unless they are already loaded or loading.
+    func loadUploadsIfNeeded() async {
+        switch self.uploadsLoadingState {
+        case .idle, .error:
+            await self.loadUploads()
+        case .loading, .loaded, .loadingMore:
+            return
+        }
+    }
+
+    /// Loads uploaded albums and artists, keeping the current ones visible while reloading.
+    func loadUploads() async {
+        guard self.uploadsLoadingState != .loading, self.uploadsLoadingState != .loadingMore else { return }
+
+        let accountGeneration = self.accountScopeGeneration
+        let hasUploads = !self.uploadedAlbums.isEmpty || !self.uploadedArtists.isEmpty
+        self.uploadsLoadingState = hasUploads ? .loadingMore : .loading
+
+        do {
+            async let albums = self.client.getUploadedAlbums()
+            async let artists = self.client.getUploadedArtists()
+            let (loadedAlbums, loadedArtists) = try await (albums, artists)
+            guard accountGeneration == self.accountScopeGeneration else { return }
+
+            self.uploadedAlbums = loadedAlbums
+            self.uploadedArtists = loadedArtists
+            self.uploadsLoadingState = .loaded
+            self.logger.info("Loaded \(loadedAlbums.count) uploaded albums and \(loadedArtists.count) uploaded artists")
+        } catch is CancellationError {
+            guard accountGeneration == self.accountScopeGeneration else { return }
+            self.uploadsLoadingState = hasUploads ? .loaded : .idle
+        } catch {
+            guard accountGeneration == self.accountScopeGeneration else { return }
+            self.logger.error("Failed to load uploaded albums and artists: \(error.localizedDescription)")
+            self.uploadsLoadingState = hasUploads ? .loaded : .error(LoadingError(from: error))
+        }
+    }
+
     /// Refreshes library content.
     func refresh() async {
         self.markLibraryStateChanged()
+
+        if self.uploadsLoadingState == .loaded {
+            Task { await self.loadUploads() }
+        }
 
         if self.loadingState == .loading || self.loadingState == .loadingMore {
             self.needsReloadAfterCurrentLoad = true

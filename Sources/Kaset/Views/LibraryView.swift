@@ -44,6 +44,30 @@ enum LibraryFilter: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - UploadsFilter
+
+/// Sections of the Uploads filter, matching the chips on the YouTube Music website.
+enum UploadsFilter: String, CaseIterable, Identifiable {
+    case albums
+    case artists
+    case songs
+
+    var id: String {
+        self.rawValue
+    }
+
+    var displayName: String {
+        switch self {
+        case .albums:
+            String(localized: "Albums")
+        case .artists:
+            String(localized: "Artists")
+        case .songs:
+            String(localized: "Songs")
+        }
+    }
+}
+
 // MARK: - LibraryView
 
 /// Library view displaying the user's saved music and followed content.
@@ -55,6 +79,7 @@ struct LibraryView: View {
 
     @State private var navigationPath = NavigationPath()
     @State private var selectedFilter: LibraryFilter = .all
+    @State private var selectedUploadsFilter: UploadsFilter = .albums
 
     private let libraryItemSize: CGFloat = 160
     private let libraryItemSpacing: CGFloat = 18
@@ -145,6 +170,10 @@ struct LibraryView: View {
             guard self.navigationPath.isEmpty else { return }
             await self.viewModel.reloadIfNeededOnActivation()
         }
+        .task(id: self.selectedFilter) {
+            guard self.selectedFilter == .uploads else { return }
+            await self.viewModel.loadUploadsIfNeeded()
+        }
         .refreshable {
             await self.viewModel.refresh()
         }
@@ -158,6 +187,10 @@ struct LibraryView: View {
             LazyVStack(alignment: .leading, spacing: 20) {
                 // Filter chips
                 self.filterChips
+
+                if self.selectedFilter == .uploads {
+                    self.uploadsFilterChips
+                }
 
                 // Combined grid with filtered content
                 self.libraryGrid
@@ -178,15 +211,30 @@ struct LibraryView: View {
         }
     }
 
-    private func filterChip(_ filter: LibraryFilter) -> some View {
-        let isSelected = self.selectedFilter == filter
+    private var uploadsFilterChips: some View {
+        HStack(spacing: 8) {
+            ForEach(UploadsFilter.allCases) { filter in
+                self.chip(filter.displayName, isSelected: self.selectedUploadsFilter == filter) {
+                    self.selectedUploadsFilter = filter
+                }
+            }
+            Spacer()
+        }
+    }
 
-        return Button {
+    private func filterChip(_ filter: LibraryFilter) -> some View {
+        self.chip(filter.displayName, isSelected: self.selectedFilter == filter) {
+            self.selectedFilter = filter
+        }
+    }
+
+    private func chip(_ title: String, isSelected: Bool, select: @escaping () -> Void) -> some View {
+        Button {
             withAnimation(.easeInOut(duration: 0.2)) {
-                self.selectedFilter = filter
+                select()
             }
         } label: {
-            Text(filter.displayName)
+            Text(title)
                 .font(.system(size: 13, weight: .medium))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
@@ -215,7 +263,14 @@ struct LibraryView: View {
         case .albums:
             items = self.viewModel.albums.map { .album($0) }
         case .uploads:
-            items = self.uploadItems
+            switch self.selectedUploadsFilter {
+            case .albums:
+                items = self.viewModel.uploadedAlbums.map { .album($0) }
+            case .artists:
+                items = self.viewModel.uploadedArtists.map { .artist($0) }
+            case .songs:
+                items = self.uploadItems
+            }
         case .artists:
             items = self.viewModel.artists.map { .artist($0) }
         case .podcasts:
@@ -232,9 +287,30 @@ struct LibraryView: View {
         return [.uploadedSongs(uploadedSongsPlaylist)]
     }
 
+    /// Whether the selected Uploads section is still waiting for its first load.
+    private var isLoadingUploadsSection: Bool {
+        self.selectedFilter == .uploads
+            && self.selectedUploadsFilter != .songs
+            && self.viewModel.uploadsLoadingState == .loading
+    }
+
+    private var uploadsSectionError: LoadingError? {
+        guard self.selectedFilter == .uploads, self.selectedUploadsFilter != .songs,
+              case let .error(error) = self.viewModel.uploadsLoadingState
+        else { return nil }
+        return error
+    }
+
     @ViewBuilder
     private var libraryGrid: some View {
-        if self.filteredItems.isEmpty {
+        if self.isLoadingUploadsSection {
+            LoadingView(String(localized: "Loading your library..."))
+                .padding(.vertical, 40)
+        } else if let error = self.uploadsSectionError {
+            ErrorView(error: error) {
+                Task { await self.viewModel.loadUploads() }
+            }
+        } else if self.filteredItems.isEmpty {
             self.emptyStateView
         } else {
             LazyVGrid(columns: [
@@ -417,11 +493,14 @@ struct LibraryView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            AlbumContextMenu(
-                album: album,
-                client: self.viewModel.client,
-                navigate: { self.navigationPath.append($0) }
-            )
+            // Uploaded albums can't be saved, shared or started as radio.
+            if !album.id.hasPrefix(Playlist.uploadsBrowseIDPrefix) {
+                AlbumContextMenu(
+                    album: album,
+                    client: self.viewModel.client,
+                    navigate: { self.navigationPath.append($0) }
+                )
+            }
         }
     }
 
@@ -530,8 +609,21 @@ struct LibraryView: View {
     }
 
     private func artistCard(_ artist: Artist) -> some View {
-        Button {
-            self.navigationPath.append(artist)
+        let isUploads = artist.id.hasPrefix(Playlist.uploadsBrowseIDPrefix)
+
+        return Button {
+            if isUploads {
+                // An uploaded artist's page is a list of their uploaded songs, not an artist page.
+                self.navigationPath.append(Playlist(
+                    id: artist.id,
+                    title: artist.name,
+                    description: nil,
+                    thumbnailURL: artist.thumbnailURL,
+                    trackCount: nil
+                ))
+            } else {
+                self.navigationPath.append(artist)
+            }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 CachedAsyncImage(url: artist.thumbnailURL?.highQualityThumbnailURL) { image in
@@ -556,7 +648,7 @@ struct LibraryView: View {
                     .multilineTextAlignment(.center)
                     .frame(width: self.libraryItemSize, alignment: .top)
 
-                Text(String(localized: "Artist"))
+                Text(isUploads ? artist.subtitle ?? String(localized: "Uploads") : String(localized: "Artist"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .frame(width: self.libraryItemSize)
@@ -565,7 +657,9 @@ struct LibraryView: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            ArtistContextMenu(artist: artist, navigate: { self.navigationPath.append($0) })
+            if !isUploads {
+                ArtistContextMenu(artist: artist, navigate: { self.navigationPath.append($0) })
+            }
         }
     }
 }

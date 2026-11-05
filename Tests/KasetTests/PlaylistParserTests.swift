@@ -881,6 +881,22 @@ struct PlaylistParserTests { // swiftlint:disable:this type_body_length
         #expect(response.continuationToken == "uploaded-next-page")
     }
 
+    @Test("Parse uploaded songs from the selected tab of a multi-tab library response")
+    func parseUploadedSongsFromSelectedTab() {
+        let data = self.makeUploadedSongsData(otherTabs: ["Library", "Downloads"])
+
+        let playlist = PlaylistParser.parseUploadedSongsPlaylist(data)
+        let response = PlaylistParser.parsePlaylistWithContinuation(
+            data,
+            playlistId: Playlist.uploadedSongsBrowseID
+        )
+
+        #expect(playlist?.trackCount == 2)
+        #expect(response.detail.tracks.count == 2)
+        #expect(response.detail.tracks[0].title == "Uploaded Track 1")
+        #expect(response.continuationToken == "uploaded-next-page")
+    }
+
     @Test("Parse playlist detail ignores Suggestions shelf when playlist shelf is present")
     func parsePlaylistDetailIgnoresSuggestionsShelf() {
         let actualTrack: [String: Any] = [
@@ -2169,43 +2185,62 @@ struct PlaylistParserTests { // swiftlint:disable:this type_body_length
         ]
     }
 
-    private func makeUploadedSongsData() -> [String: Any] {
-        [
-            "contents": [
-                "singleColumnBrowseResultsRenderer": [
-                    "tabs": [[
-                        "tabRenderer": [
-                            "content": [
-                                "sectionListRenderer": [
-                                    "contents": [[
-                                        "musicShelfRenderer": [
-                                            "contents": [
-                                                self.uploadedSongRow(
-                                                    videoId: "upload-video-1",
-                                                    title: "Uploaded Track 1",
-                                                    artist: "Uploaded Artist"
-                                                ),
-                                                self.uploadedSongRow(
-                                                    videoId: "upload-video-2",
-                                                    title: "Uploaded Track 2",
-                                                    artist: "Another Uploaded Artist"
-                                                ),
-                                                [
-                                                    "continuationItemRenderer": [
-                                                        "continuationEndpoint": [
-                                                            "continuationCommand": [
-                                                                "token": "uploaded-next-page",
-                                                            ],
-                                                        ],
-                                                    ],
+    /// Builds an uploaded songs response. `otherTabs` adds empty, unselected tabs before the
+    /// selected uploads tab, like the real Library / Downloads / Uploads response.
+    private func makeUploadedSongsData(otherTabs: [String] = []) -> [String: Any] {
+        let emptyTabs: [[String: Any]] = otherTabs.map { title in
+            [
+                "tabRenderer": [
+                    "title": title,
+                    "selected": false,
+                    "content": [
+                        "sectionListRenderer": [
+                            "continuations": [[
+                                "nextContinuationData": ["continuation": "\(title)-section-token"],
+                            ]],
+                        ],
+                    ],
+                ],
+            ]
+        }
+        let uploadsTab: [String: Any] = [
+            "tabRenderer": [
+                "selected": !otherTabs.isEmpty,
+                "content": [
+                    "sectionListRenderer": [
+                        "contents": [[
+                            "musicShelfRenderer": [
+                                "contents": [
+                                    self.uploadedSongRow(
+                                        videoId: "upload-video-1",
+                                        title: "Uploaded Track 1",
+                                        artist: "Uploaded Artist"
+                                    ),
+                                    self.uploadedSongRow(
+                                        videoId: "upload-video-2",
+                                        title: "Uploaded Track 2",
+                                        artist: "Another Uploaded Artist"
+                                    ),
+                                    [
+                                        "continuationItemRenderer": [
+                                            "continuationEndpoint": [
+                                                "continuationCommand": [
+                                                    "token": "uploaded-next-page",
                                                 ],
                                             ],
                                         ],
-                                    ]],
+                                    ],
                                 ],
                             ],
-                        ],
-                    ]],
+                        ]],
+                    ],
+                ],
+            ],
+        ]
+        return [
+            "contents": [
+                "singleColumnBrowseResultsRenderer": [
+                    "tabs": emptyTabs + [uploadsTab],
                 ],
             ],
         ]

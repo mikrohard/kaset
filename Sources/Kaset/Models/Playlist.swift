@@ -5,6 +5,8 @@ import Foundation
 /// Represents a playlist from YouTube Music.
 struct Playlist: Identifiable, Codable, Hashable {
     static let uploadedSongsBrowseID = "FEmusic_library_privately_owned_tracks"
+    /// Prefix shared by all uploads browse IDs: all uploaded songs, an uploaded album, an uploaded artist.
+    static let uploadsBrowseIDPrefix = "FEmusic_library_privately_owned_"
 
     let id: String
     let title: String
@@ -80,9 +82,10 @@ struct Playlist: Identifiable, Codable, Hashable {
         self.id.hasPrefix("OLAK") || self.id.hasPrefix("MPRE")
     }
 
-    /// Whether this playlist value represents the user's uploaded songs browse surface.
-    var isUploadedSongs: Bool {
-        self.id == Self.uploadedSongsBrowseID
+    /// Whether this playlist value represents one of the user's uploads browse surfaces:
+    /// all uploaded songs, an uploaded album, or an uploaded artist.
+    var isUploads: Bool {
+        self.id.hasPrefix(Self.uploadsBrowseIDPrefix)
     }
 
     var supportsLibraryToggle: Bool {
@@ -92,12 +95,12 @@ struct Playlist: Identifiable, Codable, Hashable {
     /// Account-generated collections cannot be subscribed to or removed from the library.
     static func supportsLibraryToggle(id: String) -> Bool {
         let key = LibraryContentIdentity.playlistKey(for: id)
-        return ![LikedMusicPlaylist.id, "RDPN", "SE", Self.uploadedSongsBrowseID].contains(key)
+        return ![LikedMusicPlaylist.id, "RDPN", "SE"].contains(key) && !key.hasPrefix(Self.uploadsBrowseIDPrefix)
     }
 
     /// Whether continuations for this playlist require the user's account.
     var requiresPersonalAccountForContinuations: Bool {
-        LikedMusicPlaylist.matches(id: self.id) || self.isUploadedSongs || self.canDelete
+        LikedMusicPlaylist.matches(id: self.id) || self.isUploads || self.canDelete
     }
 
     /// Display string for track count.
@@ -217,9 +220,9 @@ struct PlaylistDetail: Identifiable {
         self.id.hasPrefix("OLAK") || self.id.hasPrefix("MPRE")
     }
 
-    /// Whether this detail represents the user's uploaded songs browse surface.
-    var isUploadedSongs: Bool {
-        self.id == Playlist.uploadedSongsBrowseID
+    /// Whether this detail represents one of the user's uploads browse surfaces.
+    var isUploads: Bool {
+        self.id.hasPrefix(Playlist.uploadsBrowseIDPrefix)
     }
 
     var supportsLibraryToggle: Bool {
@@ -228,7 +231,7 @@ struct PlaylistDetail: Identifiable {
 
     /// Whether continuations for this detail require the user's account.
     var requiresPersonalAccountForContinuations: Bool {
-        LikedMusicPlaylist.matches(id: self.id) || self.isUploadedSongs || self.canDelete
+        LikedMusicPlaylist.matches(id: self.id) || self.isUploads || self.canDelete
     }
 
     init(

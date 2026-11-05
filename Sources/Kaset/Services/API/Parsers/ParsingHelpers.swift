@@ -80,6 +80,16 @@ enum ParsingHelpers {
         return self.chartKeywords.contains { lowercased.contains($0) }
     }
 
+    private static let uploadedArtistBrowseIDPrefix = "FEmusic_library_privately_owned_artist_detail"
+
+    /// Returns the content of the selected tab, falling back to the first tab.
+    /// Library browse pages such as uploads return Library, Downloads and Uploads
+    /// tabs, and only the selected one carries contents and continuations.
+    static func selectedTabContent(from tabs: [[String: Any]]) -> [String: Any]? {
+        let tab = tabs.first { ($0["tabRenderer"] as? [String: Any])?["selected"] as? Bool == true } ?? tabs.first
+        return (tab?["tabRenderer"] as? [String: Any])?["content"] as? [String: Any]
+    }
+
     /// Normalizes a URL string by adding https: prefix to protocol-relative URLs.
     static func normalizeURL(_ urlString: String) -> String {
         if urlString.hasPrefix("//") {
@@ -789,7 +799,7 @@ enum ParsingHelpers {
                     profileKind: Artist.profileKind(forPageType: Self.extractPageType(from: browseEndpoint))
                 ))
             } else if fallbackArtistName == nil,
-                      run["navigationEndpoint"] == nil,
+                      run["navigationEndpoint"] == nil || Self.isUploadedArtistRun(run),
                       !Self.isMetadataText(artistName)
             {
                 fallbackArtistName = artistName
@@ -800,8 +810,8 @@ enum ParsingHelpers {
             return artists
         }
 
-        // Uploaded songs often expose artist metadata as plain text, without a
-        // browse endpoint. Preserve that text so playlist rows do not show an
+        // Uploaded songs expose artist metadata as plain text or as a link to the
+        // user's uploads for that artist, not to an artist page. Preserve that text so playlist rows do not show an
         // empty artist line.
         guard let artistName = fallbackArtistName else {
             return []
@@ -811,6 +821,11 @@ enum ParsingHelpers {
             id: Self.stableId(title: "upload-artist", components: artistName),
             name: artistName
         )]
+    }
+
+    private static func isUploadedArtistRun(_ run: [String: Any]) -> Bool {
+        let browseEndpoint = (run["navigationEndpoint"] as? [String: Any])?["browseEndpoint"] as? [String: Any]
+        return (browseEndpoint?["browseId"] as? String)?.hasPrefix(self.uploadedArtistBrowseIDPrefix) == true
     }
 
     /// Extracts album from flex columns.

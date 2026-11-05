@@ -154,7 +154,7 @@ extension PlaylistDetailView {
 
     @ViewBuilder
     private func playlistManagementButtons(_ detail: PlaylistDetail, showsTitles: Bool) -> some View {
-        if !detail.isAlbum, !detail.isUploadedSongs {
+        if !detail.isAlbum, !detail.isUploads {
             Button {
                 self.showRefineSheet = true
             } label: {

@@ -269,6 +269,54 @@ enum LibraryContentParser {
         return LibraryContentIdentity.deduplicatedArtists(artists)
     }
 
+    /// Parses the first page of uploaded artists and the token for the next page.
+    static func parseUploadedArtistsPage(_ data: [String: Any]) -> ([Artist], String?) {
+        guard let shelf = Self.extractLibrarySections(from: data)
+            .lazy
+            .compactMap({ $0["musicShelfRenderer"] as? [String: Any] })
+            .first
+        else {
+            return ([], nil)
+        }
+        return Self.parseUploadedArtistsShelf(shelf)
+    }
+
+    /// Parses a continuation page of uploaded artists and the token for the next page.
+    static func parseUploadedArtistsContinuation(_ data: [String: Any]) -> ([Artist], String?) {
+        guard let shelf = ResponseTreeSearch.firstDictionary(named: "musicShelfContinuation", in: data) else {
+            return ([], nil)
+        }
+        return Self.parseUploadedArtistsShelf(shelf)
+    }
+
+    /// Each row links to the uploaded artist's songs; the second column holds the song count ("10 songs").
+    private static func parseUploadedArtistsShelf(_ shelf: [String: Any]) -> ([Artist], String?) {
+        let rows = (shelf["contents"] as? [[String: Any]]) ?? []
+        let artists = rows.compactMap { row -> Artist? in
+            guard let renderer = row["musicResponsiveListItemRenderer"] as? [String: Any],
+                  let navigationEndpoint = renderer["navigationEndpoint"] as? [String: Any],
+                  let browseEndpoint = navigationEndpoint["browseEndpoint"] as? [String: Any],
+                  let browseId = browseEndpoint["browseId"] as? String,
+                  browseId.hasPrefix(Playlist.uploadsBrowseIDPrefix)
+            else { return nil }
+
+            let columns = ((renderer["flexColumns"] as? [[String: Any]]) ?? []).map { column -> String in
+                let columnRenderer = column["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any]
+                let text = columnRenderer?["text"] as? [String: Any]
+                return ParsingHelpers.joinedRunText((text?["runs"] as? [[String: Any]]) ?? [])
+            }
+            guard let name = columns.first, !name.isEmpty else { return nil }
+
+            return Artist(
+                id: browseId,
+                name: name,
+                thumbnailURL: ParsingHelpers.extractThumbnailURL(from: renderer),
+                subtitle: columns.dropFirst().first { !$0.isEmpty }
+            )
+        }
+        return (artists, Self.nextPage(from: shelf, itemsKey: "contents"))
+    }
+
     /// Parses the uploaded songs browse endpoint into a virtual playlist tile for Library.
     static func parseUploadedSongsPlaylist(_ data: [String: Any]) -> Playlist? {
         let detail = PlaylistParser.parsePlaylistWithContinuation(data, playlistId: Playlist.uploadedSongsBrowseID).detail
@@ -292,9 +340,7 @@ enum LibraryContentParser {
         guard let contents = data["contents"] as? [String: Any],
               let singleColumnBrowseResults = contents["singleColumnBrowseResultsRenderer"] as? [String: Any],
               let tabs = singleColumnBrowseResults["tabs"] as? [[String: Any]],
-              let firstTab = tabs.first,
-              let tabRenderer = firstTab["tabRenderer"] as? [String: Any],
-              let tabContent = tabRenderer["content"] as? [String: Any],
+              let tabContent = ParsingHelpers.selectedTabContent(from: tabs),
               let sectionListRenderer = tabContent["sectionListRenderer"] as? [String: Any],
               let sectionContents = sectionListRenderer["contents"] as? [[String: Any]]
         else {

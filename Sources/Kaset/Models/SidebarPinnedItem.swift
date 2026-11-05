@@ -85,7 +85,7 @@ struct SidebarPinnedItem: Identifiable, Codable, Hashable {
     }
 
     static func from(_ detail: PlaylistDetail) -> SidebarPinnedItem? {
-        guard !detail.isUploadedSongs else { return nil }
+        guard !detail.isUploads else { return nil }
 
         if detail.isAlbum {
             return self.from(Album(

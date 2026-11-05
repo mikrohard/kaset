@@ -46,7 +46,7 @@ struct AppIntentsLibrary: Equatable {
 
     /// Playlists that can be played by ID. The uploads shelf is a browse page, not a playlist.
     var playablePlaylists: [Playlist] {
-        self.playlists.filter { !$0.isUploadedSongs }
+        self.playlists.filter { !$0.isUploads }
     }
 
     /// Albums whose ID can be fetched as a playlist.

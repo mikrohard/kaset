@@ -292,9 +292,7 @@ enum PlaylistParser {
     private static func extractTokenFromSingleColumnRenderer(_ contents: [String: Any]) -> String? {
         guard let singleColumnBrowseResults = contents["singleColumnBrowseResultsRenderer"] as? [String: Any],
               let tabs = singleColumnBrowseResults["tabs"] as? [[String: Any]],
-              let firstTab = tabs.first,
-              let tabRenderer = firstTab["tabRenderer"] as? [String: Any],
-              let tabContent = tabRenderer["content"] as? [String: Any],
+              let tabContent = ParsingHelpers.selectedTabContent(from: tabs),
               let sectionListRenderer = tabContent["sectionListRenderer"] as? [String: Any]
         else {
             return nil
@@ -653,9 +651,7 @@ enum PlaylistParser {
 
         if let singleColumnBrowseResults = contents["singleColumnBrowseResultsRenderer"] as? [String: Any],
            let tabs = singleColumnBrowseResults["tabs"] as? [[String: Any]],
-           let firstTab = tabs.first,
-           let tabRenderer = firstTab["tabRenderer"] as? [String: Any],
-           let tabContent = tabRenderer["content"] as? [String: Any],
+           let tabContent = ParsingHelpers.selectedTabContent(from: tabs),
            let sectionListRenderer = tabContent["sectionListRenderer"] as? [String: Any],
            let sectionContents = sectionListRenderer["contents"] as? [[String: Any]]
         {
@@ -852,9 +848,7 @@ enum PlaylistParser {
             // Try singleColumnBrowseResultsRenderer path
             if let singleColumnBrowseResults = contents["singleColumnBrowseResultsRenderer"] as? [String: Any],
                let tabs = singleColumnBrowseResults["tabs"] as? [[String: Any]],
-               let firstTab = tabs.first,
-               let tabRenderer = firstTab["tabRenderer"] as? [String: Any],
-               let tabContent = tabRenderer["content"] as? [String: Any],
+               let tabContent = ParsingHelpers.selectedTabContent(from: tabs),
                let sectionListRenderer = tabContent["sectionListRenderer"] as? [String: Any],
                let sectionContents = sectionListRenderer["contents"] as? [[String: Any]]
             {

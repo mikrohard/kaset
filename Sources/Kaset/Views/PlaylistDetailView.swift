@@ -252,7 +252,7 @@ struct PlaylistDetailView: View {
     }
 
     private func contentKindText(for detail: PlaylistDetail) -> String {
-        if detail.isUploadedSongs {
+        if detail.isUploads {
             return String(localized: "Uploads")
         }
         return detail.isAlbum ? String(localized: "Album") : String(localized: "Playlist")
@@ -438,7 +438,7 @@ struct PlaylistDetailView: View {
         return !self.viewModel.isRemovingTrack
             && detail.canDelete
             && !detail.isAlbum
-            && !detail.isUploadedSongs
+            && !detail.isUploads
             && track.playlistSetVideoId != nil
     }
 
